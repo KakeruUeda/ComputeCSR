@@ -2,9 +2,14 @@
  * @brief Simple implementation for converting COO format to CSR format
  * @ref Timony A. Davis, Direct Methods for Sparse Linear Systems, SIAM.
  */
+
 #include <iostream>
 #include <vector>
 #include <cassert>
+#include <cstdlib>
+#include <ctime>
+#include <algorithm>
+#include <iomanip>
 
 class CsrMatrix
 {
@@ -16,8 +21,9 @@ public:
     nnz_ = nnz;
 
     row_ptr_.resize(m_ + 1, 0);
+    map2csr_.resize(nnz_, 0);
     column_ind_.resize(nnz_, 0);
-    value_.resize(nnz_, 0);
+    values_.resize(nnz_, 0);
   }
 
   ~CsrMatrix() = default;
@@ -31,47 +37,62 @@ public:
   {
     return column_ind_;
   }
-  
+
   const std::vector<double> &get_value() const
   {
-    return value_;
+    return values_;
   }
-  
+
+  const std::vector<int> &get_map2csr() const
+  {
+    return map2csr_;
+  }
+
   int get_nnz() const
   {
     return nnz_;
   }
 
-  void compress(std::vector<int> &r,
-                std::vector<int> &c,
-                std::vector<double> &v)
+  void compress(const std::vector<int> &r,
+                const std::vector<int> &c,
+                const std::vector<double> &v)
   {
-    assert(nnz_ == r.size() && r.size() == c.size() && c.size() == v.size());
+    assert(static_cast<std::size_t>(nnz_) == r.size() && r.size() == c.size() && c.size() == v.size());
 
-    std::vector<int> w(m_, 0);
-
+    std::vector<int> row_buffer(m_, 0);
     for (int i = 0; i < nnz_; ++i)
     {
-      w[r[i]]++;
+      assert(r[i] >= 0 && r[i] < m_);
+      assert(c[i] >= 0 && c[i] < n_);
+      row_buffer[r[i]]++;
     }
 
-    // Cumulative sum
     row_ptr_[0] = 0;
     for (int i = 0; i < m_; ++i)
     {
-      row_ptr_[i + 1] = row_ptr_[i] + w[i];
+      row_ptr_[i + 1] = row_ptr_[i] + row_buffer[i];
     }
 
-    for (int i = 0; i < m_; ++i)
-    {
-      w[i] = row_ptr_[i];
-    }
+    assert(row_ptr_[m_] == nnz_);
+
+    std::fill(row_buffer.begin(), row_buffer.end(), 0);
 
     for (int i = 0; i < nnz_; ++i)
     {
-      int j = w[r[i]]++;
-      column_ind_[j] = c[i];
-      value_[j] = v[i];
+      map2csr_[i] = row_ptr_[r[i]] + row_buffer[r[i]];
+      column_ind_[map2csr_[i]] = c[i];
+      values_[map2csr_[i]] = v[i];
+      row_buffer[r[i]]++;
+    }
+  }
+
+  // Reset using values in the original COO input order.
+  void reset(const std::vector<double> &coo_values)
+  {
+    assert(coo_values.size() == static_cast<std::size_t>(nnz_));
+    for (int i = 0; i < nnz_; ++i)
+    {
+      values_[map2csr_[i]] = coo_values[i];
     }
   }
 
@@ -81,56 +102,78 @@ private:
   int nnz_;
 
   std::vector<int> row_ptr_;
+  std::vector<int> map2csr_;
   std::vector<int> column_ind_;
-  std::vector<double> value_;
+  std::vector<double> values_;
 };
 
 void print_results(const CsrMatrix &csr)
 {
-  std::cout << "CSR Format:" << std::endl;
+  const auto &row_ptr = csr.get_row_ptr();
+  const auto &col = csr.get_column_ind();
+  const auto &val = csr.get_value();
+
+  std::cout << "------ CSR entries ------\n";
+
   std::cout << "row_ptr: ";
-  for (int i = 0; i < csr.get_row_ptr().size(); ++i)
-  {
-    std::cout << csr.get_row_ptr()[i] << " ";
-  }
-  std::cout << std::endl;
+  for (int x : row_ptr)
+    std::cout << std::setw(5) << x;
+  std::cout << "\n";
 
-  std::cout << "column_ind: ";
+  std::cout << "col:     ";
   for (int i = 0; i < csr.get_nnz(); ++i)
-  {
-    std::cout << csr.get_column_ind()[i] << " ";
-  }
-  std::cout << std::endl;
+    std::cout << std::setw(5) << col[i];
+  std::cout << "\n";
 
-  std::cout << "value: ";
+  std::cout << "val:     ";
+  std::cout << std::fixed << std::setprecision(1);
   for (int i = 0; i < csr.get_nnz(); ++i)
-  {
-    std::cout << csr.get_value()[i] << " ";
-  }
-  std::cout << std::endl;
+    std::cout << std::setw(5) << val[i];
+  std::cout << "\n\n";
 }
 
 int main()
 {
+  // ============================================
   // Example matrix
   // |1.1, 0.0, 5.9, 0.0, 0.0|
   // |2.0, 0.0, 0.0, 1.0, 0.0|
   // |0.0, 0.0, 7.2, 0.0, 2.0|
 
+  // COO format
+  // row index:      {  0,   0,   1,   1,   2,  2}
+  // column index:   {  0,   2,   0,   3,   2,  4}
+  // nonzero value:  {1.1, 5.9, 2.0, 1.0, 7.2, 2.0}
+
+  // CSR format
+  // row pointer:    {  0,   2,   4,   6}
+  // column index:   {  0,   2,   0,   3,   2,   4}
+  // nonzero value:  {1.1, 5.9, 2.0, 1.0, 7.2, 2.0}
+  // ===========================================
+
   // Matrix info
   int m = 3; // Num of rows
   int n = 5; // Num of columns
 
-  // Create COO format
-  std::vector<int> row_ind = {0, 0, 1, 1, 2, 2};
-  std::vector<int> column_ind = {0, 2, 0, 3, 2, 4};
-  std::vector<double> value = {1.1, 5.9, 2.0, 1.0, 7.2, 2.0};
+  // Create COO (unsorted)
+  std::vector<int> row_ind = {2, 0, 1, 2, 1, 0};
+  std::vector<int> column_ind = {4, 0, 3, 2, 0, 2};
+  std::vector<double> value = {2.0, 1.1, 1.0, 7.2, 2.0, 5.9};
 
-  int nnz = value.size();
+  int nnz = static_cast<int>(value.size());
 
   // Create CSR
   CsrMatrix csr(m, n, nnz);
   csr.compress(row_ind, column_ind, value);
+
+  // Print CSR entries
+  print_results(csr);
+
+  // Update values
+  std::vector<double> updated_values = {8.0, 1.4, 3.0, 3.2, 0.5, 2.0};
+  csr.reset(updated_values);
+
+  std::cout << "After updating the nonzero values:\n\n";
 
   // Print CSR entries
   print_results(csr);
