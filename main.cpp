@@ -1,121 +1,124 @@
 /**
  * @brief Demonstrates COO assembly from multiple components
- *        and deduplication of matrix entries.
- * @todo  Convert COO to CSR, sort column indices,
- *        and preserve the COO-to-CSR mapping.
+ *        and conver to CSR format with deduplication and sort.
  *
  */
 
 #include "sparse.h"
 #include "utils.h"
 
-/* ---------------------------
-  Model:
-    component0 -- node0 -- component1 -- node1
-
-  n0: node0
-  n1: node1
-  int: internal
-
-  r: row index
-  c: column index
-  p: permutation index
-  v: value
-
-  Local matrix (c0):
-          n0   int
-    n0  | 1.0  0.0 |
-    int | 0.0  2.0 |
-
-  Local matrix (c1):
-          n0   n1   int
-    n0  | 3.0  0.0  5.0 |
-    n1  | 0.0  3.0  0.0 |
-
-  Global matrix:
-          n0   n1   int
-    n0  | 4.0  0.0  5.0 |
-    n1  | 0.0  3.0  0.0 |
-    int | 0.0  0.0  2.0 |
-
-  Raw entries before deduplication:
-    r c p v
-    0 0 0 1.0   // c0  (duplicate (0,0))
-    2 2 1 2.0   // c0
-    0 0 2 3.0   // c1  (duplicate (0,0))
-    0 2 3 5.0   // c1
-    1 1 4 3.0   // c1
-
-  After deduplication:
-    r c p v
-    0 0 0 4.0   // 1.0 + 3.0
-    2 2 1 2.0
-    0 2 3 5.0
-    1 1 4 3.0
---------------------------- */
-
 int main()
 {
-  // Local COO (using global indices)
+  // Local COO matrices
 
-  // component0
-  std::vector<int>    r_c0 = {0, 2};
-  std::vector<int>    c_c0 = {0, 1};
-  std::vector<double> v_c0 = {1.0, 2.0};
+  // Component 0 (3x3 with internal equations)
+  std::vector<int>    rind_c0 = {0, 0, 1, 2};
+  std::vector<int>    cind_c0 = {0, 2, 1, 2};
+  std::vector<double> vals_c0 = {2.4, 0.6, 3.1, 5.0};
 
-  // component1
-  std::vector<int>    r_c1 = {0, 0, 1};
-  std::vector<int>    c_c1 = {0, 2, 1};
-  std::vector<double> v_c1 = {3.0, 5.0, 3.0};
+  // Component 1 (2x2)
+  std::vector<int>    rind_c1 = {0, 1, 1};
+  std::vector<int>    cind_c1 = {1, 0, 1};
+  std::vector<double> vals_c1 = {0.5, 4.5, 1.1};
+
+  int nnz_c0 = 4;
+  int nnz_c1 = 3;
+
+  // Local index to global index
+  int map_c0[3];  
+  int map_c1[2];  
+  map_c0[0] = 0;  // n0
+  map_c0[1] = 1;  // n1  
+  map_c0[2] = 2;  // int
+  map_c1[0] = 1;  // n1
+  map_c1[1] = 0;  // n0
+
+  // Total number of nonzeros (duplicates included)
+  int nnz = nnz_c0 + nnz_c1;
+
+  // Create grobal COO
+  std::vector<int>    rind(nnz);
+  std::vector<int>    cind(nnz);
+  std::vector<double> vals(nnz);
+
+  // Insert components
+  int counter = 0;
+  for (int i = 0; i < nnz_c0; ++i)
+  {
+    rind[counter] = map_c0[rind_c0[i]];
+    cind[counter] = map_c0[cind_c0[i]];
+    vals[counter] = vals_c0[i];
+    counter++;
+  }
+  for (int i = 0; i < nnz_c1; ++i)
+  {
+    rind[counter] = map_c1[rind_c1[i]];
+    cind[counter] = map_c1[cind_c1[i]];
+    vals[counter] = vals_c1[i];
+    counter++;
+  }
 
   int m = 3;
   int n = 3;
 
-  // Create COO matrix
-  CooMatrix coo(m, n);
-  coo.addEntries(r_c0, c_c0, v_c0);
-  coo.addEntries(r_c1, c_c1, v_c1);
+  // Create global CSR
+  CsrMatrix csr(m, n, nnz);
 
-  // Print COO matrix entries
-  coo.printInfo();
+  int results = 0;
 
-  // Expected results
-  std::vector<int>    p_true  = {0, 1, 0, 2, 3};      // size 5 (= nnz(c0) + nnz(c1))
-  std::vector<int>    r_true  = {0, 2, 0, 1};         // size 4 (= nnz(deduplicated))
-  std::vector<int>    c_true  = {0, 1, 2, 1};         // size 4 (= nnz(deduplicated))
-  std::vector<double> v1_true = {4.0, 2.0, 5.0, 3.0}; // size 4 (= nnz(deduplicated))
+  // COO -> CSR
+  csr.compress(rind, cind, vals);
+  results += testCompress(csr);
 
-  const auto& r  = coo.getRows();
-  const auto& c  = coo.getColumns();
-  const auto& v1 = coo.getValues();
-  const auto& p  = coo.getPermutation();
+  // Deduplicate entries
+  csr.deduplicate();
+  results += testDeduplicate(csr);
 
-  // Validate results against expected results
-  int failures = checkResults(r, c, v1, p, r_true, c_true, v1_true, p_true);
+  // Sort entries
+  csr.sort();
+  results += testSort(csr);
+
+  std::cout << "\nCreated CSR entries:\n";
+  csr.printEntries();
+  std::cout << "\n";
 
   // Update values
-  std::vector<double> vnew = {
-      7.0,  // c0 (0,0) updated: 1.0 -> 7.0
-      2.0,  // c0 (2,1)
-      2.0,  // c1 (0,0) updated: 3.0 -> 2.0
-      10.0, // c1 (0,2) updated: 5.0 -> 10.0
-      3.0   // c1 (1,1)
-  };
-  coo.update(vnew);
+  vals_c0[0] = 4.8;  // (0,0)
+  vals_c0[1] = 1.2;  // (0,2)
+  vals_c0[2] = 6.2;  // (1,1)
+  vals_c0[3] = 10.0; // (2,2)
+  vals_c1[0] = 1.0;  // (0,1)
+  vals_c1[1] = 9.0;  // (1,0)
+  vals_c1[2] = 2.2;  // (1,1)
 
-  std::vector<double> v2_true = {9.0, 2.0, 10.0, 3.0};
-  const auto&         v2      = coo.getValues();
-
-  failures += checkResults(r, c, v2, p, r_true, c_true, v2_true, p_true);
-
-  if (failures == 0)
+  counter = 0;
+  for (int i = 0; i < nnz_c0; ++i)
   {
-    std::cout << "Test success" << "\n";
+    vals[counter] = vals_c0[i];
+    counter++;
+  }
+  for (int i = 0; i < nnz_c1; ++i)
+  {
+    vals[counter] = vals_c1[i];
+    counter++;
+  }
+
+  // Update entries with new values
+  csr.update(vals);
+  results += testUpdate(csr);
+
+  // Print results
+  std::cout << "\nCreated CSR entries (after values updated):\n";
+  csr.printEntries();
+
+  if (results == 0)
+  {
+    std::cout << "\nAll tests PASSED\n";
+    return 0;
   }
   else
   {
-    std::cout << "Test failed" << "\n";
+    std::cout << "\nSome tests FAILED\n";
+    return 1;
   }
-
-  return failures != 0;
 }
