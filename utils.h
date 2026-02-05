@@ -1,7 +1,8 @@
+#pragma once
+
 #include <cassert>
 #include <iomanip>
 #include <iostream>
-#include <vector>
 
 #include "sparse.h"
 
@@ -13,73 +14,52 @@ void printStatus(const char* name, bool ok, const char* reason = nullptr)
   std::cout << "\n";
 }
 
-int testCompress(const CsrMatrix& csr)
+int testSort(const CooMatrix& coo)
 {
-  const auto& rptr = csr.get_row_ptr();
-  const auto& cind = csr.get_column_ind();
-  const auto& vals = csr.get_value();
+  const int*    rind = coo.getRowInd();
+  const int*    cind = coo.getColInd();
+  int           nnz  = coo.getNnz();
 
-  std::vector<int>    true_rptr = {0, 4, 6, 7};
-  std::vector<int>    true_cind = {0, 2, 1, 0, 1, 0, 2};
-  std::vector<double> true_vals = {2.4, 0.6, 4.5, 1.1, 3.1, 0.5, 5.0};
-
-  for (std::size_t i = 0; i < true_rptr.size(); ++i)
+  // Check sorted order
+  for (int k = 0; k < nnz - 1; ++k)
   {
-    if (rptr[i] != true_rptr[i])
+    if (rind[k] > rind[k + 1] ||
+        (rind[k] == rind[k + 1] && cind[k] > cind[k + 1]))
     {
-      printStatus("Test: compress", false, "row pointers mismatch");
+      printStatus("Test: sort", false, "not sorted");
       return 1;
     }
   }
-  if (cind.size() < true_cind.size())
-  {
-    printStatus("Test: compress", false, "column indices size mismatch");
-    return 1;
-  }
-  for (std::size_t i = 0; i < true_cind.size(); ++i)
-  {
-    if (cind[i] != true_cind[i])
-    {
-      printStatus("Test: compress", false, "column index mismatch");
-      return 1;
-    }
-  }
-  if (vals.size() < true_vals.size())
-  {
-    printStatus("Test: compress", false, "values size mismatch");
-    return 1;
-  }
-  for (std::size_t i = 0; i < true_vals.size(); ++i)
-  {
-    if (vals[i] != true_vals[i])
-    {
-      printStatus("Test: compress", false, "value mismatch");
-      return 1;
-    }
-  }
-  printStatus("Test: compress", true);
+  printStatus("Test: sort", true);
   return 0;
 }
 
-int testDeduplicate(const CsrMatrix& csr)
+int testDeduplicate(const CooMatrix& coo)
 {
-  const auto& rptr = csr.get_row_ptr();
-  const auto& cind = csr.get_column_ind();
-  const auto& vals = csr.get_value();
+  const int*    rind = coo.getRowInd();
+  const int*    cind = coo.getColInd();
+  const double* vals = coo.getValues();
+  int           nnz  = coo.getNnz();
 
-  std::vector<int>    true_rptr = {0, 3, 5, 6};
-  std::vector<int>    true_cind = {0, 2, 1, 1, 0, 2};
-  std::vector<double> true_vals = {3.5, 0.6, 4.5, 3.1, 0.5, 5.0};
+  int    true_rind[] = {0, 0, 0, 1, 1, 2};
+  int    true_cind[] = {0, 1, 2, 0, 1, 2};
+  double true_vals[] = {3.5, 4.5, 0.6, 0.5, 3.1, 5.0};
+  int    true_nnz = 6;
 
-  for (std::size_t i = 0; i < true_rptr.size(); ++i)
+  if (nnz != true_nnz)
   {
-    if (rptr[i] != true_rptr[i])
+    printStatus("Test: deduplicate", false, "nnz mismatch");
+    return 1;
+  }
+  for (int i = 0; i < true_nnz; ++i)
+  {
+    if (rind[i] != true_rind[i])
     {
-      printStatus("Test: deduplicate", false, "row pointers mismatch");
+      printStatus("Test: deduplicate", false, "row index mismatch");
       return 1;
     }
   }
-  for (std::size_t i = 0; i < true_cind.size() && i < cind.size(); ++i)
+  for (int i = 0; i < true_nnz; ++i)
   {
     if (cind[i] != true_cind[i])
     {
@@ -87,7 +67,7 @@ int testDeduplicate(const CsrMatrix& csr)
       return 1;
     }
   }
-  for (std::size_t i = 0; i < true_vals.size() && i < vals.size(); ++i)
+  for (int i = 0; i < true_nnz; ++i)
   {
     if (vals[i] != true_vals[i])
     {
@@ -99,66 +79,61 @@ int testDeduplicate(const CsrMatrix& csr)
   return 0;
 }
 
-int testSort(const CsrMatrix& csr)
+int testCsr(const CsrMatrix& csr)
 {
-  const auto& rptr = csr.get_row_ptr();
-  const auto& cind = csr.get_column_ind();
-  const auto& vals = csr.get_value();
+  const int*    rptr = csr.getRowPtr();
+  const int*    cind = csr.getColInd();
+  const double* vals = csr.getValues();
 
-  std::vector<int>    true_rptr = {0, 3, 5, 6};
-  std::vector<int>    true_cind = {0, 1, 2, 0, 1, 2};
-  std::vector<double> true_vals = {3.5, 4.5, 0.6, 0.5, 3.1, 5.0};
+  int    true_rptr[] = {0, 3, 5, 6};
+  int    true_cind[] = {0, 1, 2, 0, 1, 2};
+  double true_vals[] = {3.5, 4.5, 0.6, 0.5, 3.1, 5.0};
+  int    true_rptr_size = 4;
+  int    true_cind_size = 6;
+  int    true_vals_size = 6;
 
-  for (std::size_t i = 0; i < true_rptr.size(); ++i)
+  for (int i = 0; i < true_rptr_size; ++i)
   {
     if (rptr[i] != true_rptr[i])
     {
-      printStatus("Test: sort", false, "row pointers mismatch");
+      printStatus("Test: csr", false, "row pointers mismatch");
       return 1;
     }
   }
-  for (std::size_t i = 0; i < true_cind.size() && i < cind.size(); ++i)
+  for (int i = 0; i < true_cind_size; ++i)
   {
     if (cind[i] != true_cind[i])
     {
-      printStatus("Test: sort", false, "column index mismatch");
+      printStatus("Test: csr", false, "column index mismatch");
       return 1;
     }
   }
-  for (int i = 0; i < static_cast<int>(rptr.size()) - 1; ++i)
-  {
-    for (int p = rptr[i]; p < rptr[i + 1] - 1; ++p)
-    {
-      if (cind[p] > cind[p + 1])
-      {
-        printStatus("Test: sort", false, "columns not sorted in row");
-        return 1;
-      }
-    }
-  }
-  for (std::size_t i = 0; i < true_vals.size() && i < vals.size(); ++i)
+  for (int i = 0; i < true_vals_size; ++i)
   {
     if (vals[i] != true_vals[i])
     {
-      printStatus("Test: sort", false, "value mismatch");
+      printStatus("Test: csr", false, "value mismatch");
       return 1;
     }
   }
-  printStatus("Test: sort", true);
+  printStatus("Test: csr", true);
   return 0;
 }
 
 int testUpdate(const CsrMatrix& csr)
 {
-  const auto& rptr = csr.get_row_ptr();
-  const auto& cind = csr.get_column_ind();
-  const auto& vals = csr.get_value();
+  const int*    rptr = csr.getRowPtr();
+  const int*    cind = csr.getColInd();
+  const double* vals = csr.getValues();
 
-  std::vector<int>    true_rptr = {0, 3, 5, 6};
-  std::vector<int>    true_cind = {0, 1, 2, 0, 1, 2};
-  std::vector<double> true_vals = {7.0, 9.0, 1.2, 1.0, 6.2, 10.0};
+  int    true_rptr[] = {0, 3, 5, 6};
+  int    true_cind[] = {0, 1, 2, 0, 1, 2};
+  double true_vals[] = {7.0, 9.0, 1.2, 1.0, 6.2, 10.0};
+  int    true_rptr_size = 4;
+  int    true_cind_size = 6;
+  int    true_vals_size = 6;
 
-  for (std::size_t i = 0; i < true_rptr.size(); ++i)
+  for (int i = 0; i < true_rptr_size; ++i)
   {
     if (rptr[i] != true_rptr[i])
     {
@@ -166,7 +141,7 @@ int testUpdate(const CsrMatrix& csr)
       return 1;
     }
   }
-  for (std::size_t i = 0; i < true_cind.size() && i < cind.size(); ++i)
+  for (int i = 0; i < true_cind_size; ++i)
   {
     if (cind[i] != true_cind[i])
     {
@@ -174,7 +149,7 @@ int testUpdate(const CsrMatrix& csr)
       return 1;
     }
   }
-  for (std::size_t i = 0; i < true_vals.size() && i < vals.size(); ++i)
+  for (int i = 0; i < true_vals_size; ++i)
   {
     if (vals[i] != true_vals[i])
     {

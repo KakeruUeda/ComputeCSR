@@ -1,7 +1,6 @@
 /**
  * @brief Demonstrates COO assembly from multiple components
- *        and conver to CSR format with deduplication and sort.
- *
+ *        and convert to CSR format with deduplication and sort.
  */
 
 #include "sparse.h"
@@ -11,35 +10,29 @@ int main()
 {
   // Local COO matrices
 
-  // Component 0 (3x3 with internal equations)
-  std::vector<int>    rind_c0 = {0, 0, 1, 2};
-  std::vector<int>    cind_c0 = {0, 2, 1, 2};
-  std::vector<double> vals_c0 = {2.4, 0.6, 3.1, 5.0};
+  // Component 0
+  int    rind_c0[] = {0, 0, 1, 2};
+  int    cind_c0[] = {0, 2, 1, 2};
+  double vals_c0[] = {2.4, 0.6, 3.1, 5.0};
+  int    nnz_c0    = 4;
 
-  // Component 1 (2x2)
-  std::vector<int>    rind_c1 = {0, 1, 1};
-  std::vector<int>    cind_c1 = {1, 0, 1};
-  std::vector<double> vals_c1 = {0.5, 4.5, 1.1};
-
-  int nnz_c0 = 4;
-  int nnz_c1 = 3;
+  // Component 1
+  int    rind_c1[] = {0, 1, 1};
+  int    cind_c1[] = {1, 0, 1};
+  double vals_c1[] = {0.5, 4.5, 1.1};
+  int    nnz_c1    = 3;
 
   // Local index to global index
-  int map_c0[3];  
-  int map_c1[2];  
-  map_c0[0] = 0;  // n0
-  map_c0[1] = 1;  // n1  
-  map_c0[2] = 2;  // int
-  map_c1[0] = 1;  // n1
-  map_c1[1] = 0;  // n0
+  int map_c0[] = {0, 1, 2}; // n0, n1, int
+  int map_c1[] = {1, 0};    // n1, n0
 
   // Total number of nonzeros (duplicates included)
-  int nnz = nnz_c0 + nnz_c1;
+  int nnzdup = nnz_c0 + nnz_c1;
 
-  // Create grobal COO
-  std::vector<int>    rind(nnz);
-  std::vector<int>    cind(nnz);
-  std::vector<double> vals(nnz);
+  // Create global COO
+  int*    rind = new int[nnzdup];
+  int*    cind = new int[nnzdup];
+  double* vals = new double[nnzdup];
 
   // Insert components
   int counter = 0;
@@ -61,24 +54,33 @@ int main()
   int m = 3;
   int n = 3;
 
-  // Create global CSR
-  CsrMatrix csr(m, n, nnz);
-
   int results = 0;
 
-  // COO -> CSR
-  csr.compress(rind, cind, vals);
-  results += testCompress(csr);
+  // COO: add, sort, deduplicate
+  CooMatrix coo(m, n, nnzdup);
+  coo.addEntries(rind, cind, vals);
 
-  // Deduplicate entries
-  csr.deduplicate();
-  results += testDeduplicate(csr);
+  // Sort
+  coo.sort();
+  results += testSort(coo);
 
-  // Sort entries
-  csr.sort();
-  results += testSort(csr);
+  // Deduplicate
+  coo.deduplicate();
+  results += testDeduplicate(coo);
 
-  std::cout << "\nCreated CSR entries:\n";
+  int nnz = coo.getNnz();
+
+  // Create CSR from sorted/deduplicated COO
+  CsrMatrix csr(m, n, nnz);
+
+  const int*    r = coo.getRowInd();
+  const int*    c = coo.getColInd();
+  const double* v = coo.getValues();
+
+  csr.buildRowPtr(r, c, v);
+  results += testCsr(csr);
+
+  std::cout << "\nCSR entries:\n";
   csr.printEntries();
   std::cout << "\n";
 
@@ -103,13 +105,18 @@ int main()
     counter++;
   }
 
-  // Update entries with new values
-  csr.update(vals);
+  const int* ms   = coo.getMs();
+  const int* msnd = coo.getMsnd();
+
+  csr.updateValues(vals, ms, msnd, nnzdup);
   results += testUpdate(csr);
 
-  // Print results
-  std::cout << "\nCreated CSR entries (after values updated):\n";
+  std::cout << "\nCSR entries (after values updated):\n";
   csr.printEntries();
+
+  delete[] rind;
+  delete[] cind;
+  delete[] vals;
 
   if (results == 0)
   {
