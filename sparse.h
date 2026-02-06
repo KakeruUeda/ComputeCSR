@@ -33,7 +33,6 @@ public:
     cind_ = new int[nnzdup_]{};
     vals_ = new double[nnzdup_]{};
     ms_   = new int[nnzdup_]{};
-    msnd_ = new int[nnzdup_]{};
   }
 
   ~CooMatrix()
@@ -58,6 +57,11 @@ public:
   const double* getValues() const
   {
     return vals_;
+  }
+
+  const int* getRowPtr() const
+  {
+    return rptr_;
   }
 
   const int* getMs() const
@@ -148,7 +152,18 @@ public:
    */
   void deduplicate()
   {
+    // Assumes entries are sorted.
+    rptr_ = new int[m_ + 1];
+    msnd_ = new int[nnzdup_];
+
+    if (nnzdup_ == 0)
+    {
+      nnz_ = 0;
+      return;
+    }
+
     msnd_[0] = 0;
+    rptr_[rind_[0] + 1]++;
 
     int w = 0;
     for (int r = 1; r < nnzdup_; ++r)
@@ -167,9 +182,18 @@ public:
         cind_[w] = cind_[r];
         vals_[w] = vals_[r];
         msnd_[r] = w;
+
+        rptr_[rind_[w] + 1]++;
       }
     }
     nnz_ = w + 1;
+
+    // Cumulative sum
+    for (int i = 0; i < m_; ++i)
+    {
+      rptr_[i + 1] += rptr_[i];
+    }
+    assert(rptr_[m_] == nnz_);
   }
 
   /**
@@ -186,17 +210,18 @@ public:
   }
 
 private:
-  int m_;       // Number of rows
-  int n_;       // Number of columns
-  int nnzdup_;  // nnz (with duplicates)
-  int nnz_;     // nnz (after deduplication)
+  int m_;      // Number of rows
+  int n_;      // Number of columns
+  int nnzdup_; // nnz (with duplicates)
+  int nnz_;    // nnz (after deduplication)
 
-  int*    rind_; // Row indices
-  int*    cind_; // Column indices
-  double* vals_; // Values
+  int*    rind_{nullptr}; // Row indices
+  int*    cind_{nullptr}; // Column indices
+  double* vals_{nullptr}; // Values
+  int*    rptr_{nullptr}; // Row pointer
 
-  int* ms_;   // Mapping from sorted to original
-  int* msnd_; // Mapping from deduplicated to sorted
+  int* ms_{nullptr};   // Mapping from sorted to original
+  int* msnd_{nullptr}; // Mapping from deduplicated to sorted
 };
 
 /**
@@ -259,26 +284,14 @@ public:
    * @param cind Column indices from COO
    * @param vals Values from COO
    */
-  void buildRowPtr(const int*    rind,
-                   const int*    cind,
-                   const double* vals)
+  void addEntries(const int*    rptr,
+                  const int*    cind,
+                  const double* vals)
   {
-    // Assumes COO entries are sorted.
-
-    // count entries per row
-    for (int k = 0; k < nnz_; ++k)
+    for (int i = 0; i < m_ + 1; ++i)
     {
-      rptr_[rind[k] + 1]++;
+      rptr_[i] = rptr[i];
     }
-
-    // cumulative sum
-    for (int i = 0; i < m_; ++i)
-    {
-      rptr_[i + 1] += rptr_[i];
-    }
-    assert(rptr_[m_] == nnz_);
-
-    // Copy column indices and values
     for (int k = 0; k < nnz_; ++k)
     {
       cind_[k] = cind[k];
@@ -292,7 +305,7 @@ public:
    * @param newvals New values (original COO order)
    * @param ms      Mapping: ms[sorted] = original
    * @param msnd    Mapping: msnd[sorted] = deduplicated
-  * @param nnzdup  Original number of nonzeros
+   * @param nnzdup  Original number of nonzeros
    */
   void updateValues(const double* newvals, const int* ms, const int* msnd, int nnzdup)
   {
@@ -343,7 +356,7 @@ private:
   int n_;   // Number of columns
   int nnz_; // Number of nonzeros
 
-  int*    rptr_; // Row pointers
-  int*    cind_; // Column indices
-  double* vals_; // Values
+  int*    rptr_{nullptr}; // Row pointers
+  int*    cind_{nullptr}; // Column indices
+  double* vals_{nullptr}; // Values
 };

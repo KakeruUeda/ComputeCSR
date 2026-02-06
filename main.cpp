@@ -73,11 +73,11 @@ int main()
   // Create CSR from sorted/deduplicated COO
   CsrMatrix csr(m, n, nnz);
 
-  const int*    r = coo.getRowInd();
+  const int*    r = coo.getRowPtr();
   const int*    c = coo.getColInd();
   const double* v = coo.getValues();
 
-  csr.buildRowPtr(r, c, v);
+  csr.addEntries(r, c, v);
   results += testCsr(csr);
 
   std::cout << "\nCSR entries:\n";
